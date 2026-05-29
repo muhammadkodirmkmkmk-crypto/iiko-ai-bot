@@ -19,7 +19,7 @@ OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 IIKO_SERVER = os.environ.get("IIKO_SERVER", "xan-kokand.iiko.it")
 IIKO_LOGIN = os.environ.get("IIKO_LOGIN", "SUPERADMIN")
 IIKO_PASSWORD = os.environ.get("IIKO_PASSWORD", "asdfghjkl")
-ALLOWED_USERS = list(map(int, os.environ.get("ALLOWED_USERS", "7871931220,514275093,5028786313").split(",")))
+ALLOWED_USERS = list(map(int, os.environ.get("ALLOWED_USERS", "7871931220,514275093,5028786313,182606553").split(",")))
 
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
 iiko_token = None
