@@ -707,8 +707,57 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка голосового: {str(e)}")
 
 
+async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    user_name = update.effective_user.first_name or "Дорогой пользователь"
+
+    if user_id not in ALLOWED_USERS:
+        await update.message.reply_text("⛔ У вас нет доступа к этому боту.")
+        return
+
+    welcome = f"""👋 Салом, *{user_name}*!
+
+🤖 Мен *Xan Kokand* ресторанининг AI-ассистентиман.
+
+📊 *Мен нима қила оламан:*
+
+💰 *Молия:*
+• Бугунги / давр бўйича тушум
+• Тўлов турлари (нақд, Click, Payme)
+• Chegirmalar va bonuslar
+
+👨‍💼 *Официантлар:*
+• Ҳар бир официантнинг тушуми
+• Меҳмонлар сони
+
+🍽 *Меню ва омбор:*
+• Тўлиқ меню рўйхати
+• Техник карталар (таркиби, рецептура)
+• Стоп-лист
+• Омбор қолдиқлари
+
+📦 *Ҳужжатлар:*
+• Кирим накладнойлари (фото юборинг!)
+• Ҳисдан чиқаришлар
+• Кассовые смены
+
+📈 *Аналитика:*
+• Соатлик тушум
+• Категориялар бўйича савдо
+• Ўчирилган таомлар
+
+---
+💬 *Матн* ёки 🎤 *овозли хабар* юборинг — жавоб бераман!
+
+_Мисол: "Бугун қанча тушум бўлди?" ёки "Лагманнинг техник картасини кўрсат"_"""
+
+    await update.message.reply_text(welcome, parse_mode="Markdown")
+
+
 def main():
+    from telegram.ext import CommandHandler
     app = Application.builder().token(TELEGRAM_TOKEN).build()
+    app.add_handler(CommandHandler("start", handle_start))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
     app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
