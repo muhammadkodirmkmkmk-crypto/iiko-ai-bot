@@ -30,7 +30,7 @@ RESTAURANTS = {
         "server": "myata-tashkent-co.iiko.it",
         "login": "BIGBOSS",
         "password": "3161188",
-        "users": [44727111],
+        "users": [44727111, 1826041],
         "display_name": "Мята Ташкент"
     }
 }
