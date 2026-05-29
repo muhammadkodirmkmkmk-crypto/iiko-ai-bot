@@ -405,6 +405,111 @@ def get_dish_cost(dish_name: str) -> dict:
         return {"error": str(e)}
 
 
+
+def create_incoming_invoice(supplier_name: str, store_name: str, items: list,
+                             invoice_date: str = None, invoice_number: str = None) -> dict:
+    """Создать приходную накладную в iiko"""
+    try:
+        fd = invoice_date or today()
+
+        # Получаем список поставщиков
+        suppliers = iiko_get("suppliers")
+        supplier = None
+        if isinstance(suppliers, list):
+            for s in suppliers:
+                if supplier_name.lower() in s.get("name","").lower():
+                    supplier = s
+                    break
+        if not supplier:
+            return {"error": f"Поставщик '{supplier_name}' не найден. Проверьте название."}
+
+        # Получаем список складов
+        stores = iiko_get("v2/entities/stores/list", {"includeDeleted": "false"})
+        store = None
+        if isinstance(stores, list):
+            for s in stores:
+                if store_name.lower() in s.get("name","").lower():
+                    store = s
+                    break
+        if not store:
+            return {"error": f"Склад '{store_name}' не найден. Проверьте название."}
+
+        # Получаем список продуктов для сопоставления
+        products = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        product_map = {}
+        if isinstance(products, list):
+            for p in products:
+                product_map[p.get("name","").lower()] = p
+
+        # Формируем позиции накладной
+        invoice_items = []
+        not_found = []
+        for item in items:
+            name = item.get("name", "")
+            name_lower = name.lower()
+            # Ищем точное совпадение
+            product = product_map.get(name_lower)
+            # Если не нашли — ищем частичное
+            if not product:
+                for pname, prod in product_map.items():
+                    if name_lower in pname or pname in name_lower:
+                        product = prod
+                        break
+            if not product:
+                not_found.append(name)
+                continue
+
+            # Получаем единицу измерения
+            units = product.get("units", [])
+            unit_id = None
+            if units:
+                unit_id = units[0].get("id")
+
+            invoice_items.append({
+                "product": {"id": product.get("id")},
+                "amount": item.get("amount", 1),
+                "price": item.get("price", 0),
+                "sum": round(item.get("amount", 1) * item.get("price", 0), 2),
+                "unit": {"id": unit_id} if unit_id else None
+            })
+
+        if not invoice_items:
+            return {"error": "Ни один товар не найден в системе iiko", "not_found": not_found}
+
+        # Формируем тело накладной
+        import uuid
+        body = {
+            "documentNumber": invoice_number or f"AUTO-{fd}-{str(uuid.uuid4())[:8].upper()}",
+            "dateIncoming": fd,
+            "supplier": {"id": supplier.get("id")},
+            "defaultStore": {"id": store.get("id")},
+            "items": invoice_items
+        }
+
+        token = get_iiko_token()
+        resp = requests.post(
+            f"https://{IIKO_SERVER}/resto/api/documents/import/incomingInvoice?key={token}",
+            json=body, verify=False, timeout=30
+        )
+
+        if resp.status_code in [200, 201]:
+            total = sum(i["sum"] for i in invoice_items)
+            return {
+                "success": True,
+                "document_number": body["documentNumber"],
+                "date": fd,
+                "supplier": supplier.get("name"),
+                "store": store.get("name"),
+                "items_created": len(invoice_items),
+                "items_not_found": not_found,
+                "total_sum": total
+            }
+        else:
+            return {"error": f"Ошибка сервера: {resp.status_code} — {resp.text[:200]}"}
+
+    except Exception as e:
+        return {"error": str(e)}
+
 # ===================== TOOLS =====================
 
 TOOLS = [
@@ -425,7 +530,8 @@ TOOLS = [
     {"name": "get_incoming_invoices", "description": "Приходные накладные — поступление товаров от поставщиков.", "input_schema": {"type": "object", "properties": {"from_date": {"type": "string"}, "to_date": {"type": "string"}}, "required": []}},
     {"name": "get_tech_card", "description": "Технологическая карта блюда — состав, ингредиенты, вес брутто/нетто, БЖУ, калории.", "input_schema": {"type": "object", "properties": {"dish_name": {"type": "string", "description": "Название блюда"}}, "required": ["dish_name"]}},
     {"name": "get_menu", "description": "Список всех блюд меню с ценами и категориями.", "input_schema": {"type": "object", "properties": {"category": {"type": "string", "description": "Фильтр по категории (необязательно)"}}, "required": []}},
-    {"name": "get_dish_cost", "description": "Себестоимость блюда, цена продажи и маржинальность.", "input_schema": {"type": "object", "properties": {"dish_name": {"type": "string", "description": "Название блюда"}}, "required": ["dish_name"]}}
+    {"name": "get_dish_cost", "description": "Себестоимость блюда, цена продажи и маржинальность.", "input_schema": {"type": "object", "properties": {"dish_name": {"type": "string", "description": "Название блюда"}}, "required": ["dish_name"]}},
+    {"name": "create_incoming_invoice", "description": "Создать приходную накладную в iiko — оприходовать товары на склад. Используй когда пользователь хочет создать накладную или прислал фото/список товаров для оприходования.", "input_schema": {"type": "object", "properties": {"supplier_name": {"type": "string", "description": "Название поставщика"}, "store_name": {"type": "string", "description": "Название склада"}, "invoice_date": {"type": "string", "description": "Дата YYYY-MM-DD"}, "invoice_number": {"type": "string", "description": "Номер накладной"}, "items": {"type": "array", "description": "Список товаров", "items": {"type": "object", "properties": {"name": {"type": "string"}, "amount": {"type": "number"}, "price": {"type": "number"}}, "required": ["name", "amount", "price"]}}}, "required": ["supplier_name", "store_name", "items"]}}
 ]
 
 TOOL_FUNCTIONS = {t["name"]: globals()[t["name"]] for t in TOOLS}
@@ -490,6 +596,94 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(f"❌ Ошибка: {str(e)}")
 
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.effective_user.id
+    if user_id not in ALLOWED_USERS:
+        await update.message.reply_text("⛔ У вас нет доступа.")
+        return
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+    try:
+        # Берём фото максимального размера
+        photo = update.message.photo[-1]
+        tg_file = await context.bot.get_file(photo.file_id)
+        resp = requests.get(tg_file.file_path, timeout=30)
+        resp.raise_for_status()
+        image_b64 = base64.b64encode(resp.content).decode()
+
+        # Подпись к фото если есть
+        caption = update.message.caption or ""
+        user_hint = f"\nКомментарий пользователя: {caption}" if caption else ""
+
+        # Claude читает фото и решает что делать
+        prompt = f"""Пользователь прислал фото.{user_hint}
+
+Проанализируй изображение:
+1. Если это накладная/счёт/список товаров — извлеки все данные (поставщик, товары, количества, цены, дата, номер) и создай приходную накладную в iiko используя инструмент create_incoming_invoice
+2. Если это что-то другое — опиши что видишь и помоги пользователю
+
+При создании накладной:
+- Если поставщик не указан — используй "Неизвестный поставщик" и уточни у пользователя
+- Если склад не указан — используй основной склад ресторана
+- Сообщи результат: какие товары добавлены, какие не найдены в системе"""
+
+        response = anthropic_client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=3000,
+            system=SYSTEM_PROMPT,
+            tools=TOOLS,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
+                    {"type": "text", "text": prompt}
+                ]
+            }]
+        )
+
+        # Обрабатываем ответ с возможными tool_use
+        messages = [
+            {"role": "user", "content": [
+                {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": image_b64}},
+                {"type": "text", "text": prompt}
+            ]},
+            {"role": "assistant", "content": response.content}
+        ]
+
+        for _ in range(8):
+            if response.stop_reason != "tool_use":
+                break
+            tool_results = []
+            for block in response.content:
+                if block.type == "tool_use":
+                    logger.info(f"Photo tool: {block.name} {block.input}")
+                    try:
+                        result = TOOL_FUNCTIONS[block.name](**block.input)
+                        tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result, ensure_ascii=False)})
+                    except Exception as e:
+                        tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": f"Ошибка: {str(e)}", "is_error": True})
+            messages.append({"role": "user", "content": tool_results})
+            response = anthropic_client.messages.create(
+                model="claude-sonnet-4-5",
+                max_tokens=2000,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=messages
+            )
+            messages.append({"role": "assistant", "content": response.content})
+
+        answer = ""
+        for block in response.content:
+            if hasattr(block, "text"):
+                answer = block.text
+                break
+
+        await update.message.reply_text(f"🖼 {answer}" if answer else "✅ Готово!", parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"Фото ошибка: {e}")
+        await update.message.reply_text(f"❌ Ошибка обработки фото: {str(e)}")
+
+
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     if user_id not in ALLOWED_USERS:
@@ -517,6 +711,7 @@ def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(MessageHandler(filters.VOICE, handle_voice))
+    app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     logger.info("Бот запущен!")
     app.run_polling(drop_pending_updates=True)
 
