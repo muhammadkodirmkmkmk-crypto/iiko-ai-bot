@@ -27,7 +27,7 @@ RESTAURANTS = {
         "display_name": None
     },
     "myata": {
-        "server": "myata-tashkent-co.iiko.it",
+        "server": "myata-tashkent-siti.iiko.it",
         "login": "BIGBOSS",
         "password": "3161188",
         "users": [44727111, 1826041],
