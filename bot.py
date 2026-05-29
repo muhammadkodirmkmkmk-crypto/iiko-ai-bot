@@ -244,16 +244,27 @@ def get_cash_shifts(from_date: str = None, to_date: str = None, _user_id: int = 
     fd = from_date or today()
     td = to_date or today()
     try:
-        data = iiko_get("v2/cashshifts/list", {"from": fd, "to": td, "status": "ANY"}, user_id=_user_id)
+        rest_key = get_rest_key(_user_id) if _user_id else "xan"
+        server = RESTAURANTS[rest_key]["server"]
+        token = get_iiko_token(rest_key)
+        # Используем прямой запрос с правильными параметрами
+        url = f"https://{server}/resto/api/v2/cashshifts/list"
+        params = {"key": token, "from": fd, "to": td, "status": "ANY"}
+        resp = requests.get(url, params=params, verify=False, timeout=30)
+        resp.raise_for_status()
+        try:
+            data = resp.json()
+        except:
+            return {"error": resp.text[:200], "date": fd}
         if isinstance(data, list):
             shifts = [{"open_date": s.get("openDate"), "close_date": s.get("closeDate"), "status": s.get("status"), "cash_income": s.get("cashIncome",0), "cash_outcome": s.get("cashOutcome",0), "waiter": s.get("waiter",{}).get("name","—") if isinstance(s.get("waiter"),dict) else "—"} for s in data]
             return {"shifts": shifts, "count": len(shifts), "date": fd}
-        return {"raw": str(data), "date": fd}
+        return {"raw": str(data)[:300], "date": fd}
     except Exception as e:
         return {"error": str(e), "date": fd}
 
 
-def get_stop_list() -> dict:
+def get_stop_list(_user_id: int = None) -> dict:
     try:
         data = iiko_get("stoplist", user_id=_user_id)
         items = [{"name": i.get("product",{}).get("name","—"), "balance": i.get("balance",0)} for i in (data.get("stopListItems",[]) if isinstance(data,dict) else [])]
@@ -262,7 +273,7 @@ def get_stop_list() -> dict:
         return {"error": str(e)}
 
 
-def get_active_orders() -> dict:
+def get_active_orders(_user_id: int = None) -> dict:
     try:
         data = iiko_get("orders/list", {"includeDeleted": "false", "includeClosed": "false"}, user_id=_user_id)
         orders = [{"number": o.get("number"), "table": o.get("table",{}).get("name","—") if isinstance(o.get("table"),dict) else "—", "waiter": o.get("waiter",{}).get("name","—") if isinstance(o.get("waiter"),dict) else "—", "sum": o.get("sum",0), "guests": o.get("guestsCount",0)} for o in (data[:20] if isinstance(data,list) else [])]
