@@ -23,13 +23,15 @@ RESTAURANTS = {
         "server": "xan-kokand.iiko.it",
         "login": "SUPERADMIN",
         "password": "asdfghjkl",
-        "users": [7871931220, 514275093, 5028786313, 182606553]
+        "users": [7871931220, 514275093, 5028786313, 182606553],
+        "display_name": None
     },
     "myata": {
         "server": "myata-tashkent-co.iiko.it",
         "login": "BIGBOSS",
         "password": "3161188",
-        "users": [44727111]
+        "users": [44727111],
+        "display_name": "Мята Ташкент"
     }
 }
 
@@ -574,12 +576,20 @@ TOOLS = [
 
 TOOL_FUNCTIONS = {t["name"]: globals()[t["name"]] for t in TOOLS}
 
-SYSTEM_PROMPT = f"""Ты — умный ИИ-ассистент для работы с данными ресторана через систему iiko.
+def get_system_prompt(user_id: int = None) -> str:
+    rest_key = get_rest_key(user_id) if user_id else "xan"
+    display_name = RESTAURANTS[rest_key].get("display_name")
+    if display_name:
+        name_instruction = f"Ты работаешь с рестораном {display_name}. Можешь упоминать это название в ответах."
+    else:
+        name_instruction = "Никогда не упоминай название ресторана в ответах."
+    return f"""Ты — умный ИИ-ассистент для работы с данными ресторана через систему iiko.
 
 Сегодня: {date.today().isoformat()}
 
+{name_instruction}
+
 ВАЖНО:
-- Никогда не упоминай название ресторана в ответах
 - Всегда используй инструменты для получения реальных данных
 - Никогда не говори "нет доступа" — сначала попробуй вызвать инструмент
 - Если нужно несколько данных — вызывай несколько инструментов
@@ -589,6 +599,8 @@ SYSTEM_PROMPT = f"""Ты — умный ИИ-ассистент для рабо�
 - Числа: 1 234 567 сум
 - Суммы уже в сумах (не делить)
 - Отвечай на языке пользователя (русский/узбекский)"""
+
+SYSTEM_PROMPT = get_system_prompt()
 
 
 async def process_message(text: str) -> str:
