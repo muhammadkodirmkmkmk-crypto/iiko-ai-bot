@@ -16,35 +16,71 @@ logger = logging.getLogger(__name__)
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
-IIKO_SERVER = os.environ.get("IIKO_SERVER", "xan-kokand.iiko.it")
-IIKO_LOGIN = os.environ.get("IIKO_LOGIN", "SUPERADMIN")
-IIKO_PASSWORD = os.environ.get("IIKO_PASSWORD", "asdfghjkl")
-ALLOWED_USERS = list(map(int, os.environ.get("ALLOWED_USERS", "7871931220,514275093,5028786313,182606553").split(",")))
+
+# Конфигурация ресторанов — каждый пользователь привязан к своему ресторану
+RESTAURANTS = {
+    "xan": {
+        "server": "xan-kokand.iiko.it",
+        "login": "SUPERADMIN",
+        "password": "asdfghjkl",
+        "users": [7871931220, 514275093, 5028786313, 182606553]
+    },
+    "myata": {
+        "server": "myata-tashkent-co.iiko.it",
+        "login": "BIGBOSS",
+        "password": "3161188",
+        "users": [44727111]
+    }
+}
+
+# Строим маппинг user_id -> ресторан
+USER_RESTAURANT = {}
+for rest_key, rest_data in RESTAURANTS.items():
+    for uid in rest_data["users"]:
+        USER_RESTAURANT[uid] = rest_key
+
+ALLOWED_USERS = list(USER_RESTAURANT.keys())
 
 anthropic_client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
-iiko_token = None
-iiko_token_time = None
+
+# Кеш токенов для каждого ресторана отдельно
+_iiko_tokens = {}
+_iiko_token_times = {}
 
 
-def get_iiko_token():
-    global iiko_token, iiko_token_time
+def get_iiko_token(rest_key: str = "xan") -> str:
+    global _iiko_tokens, _iiko_token_times
     now = datetime.now()
-    if iiko_token and iiko_token_time and (now - iiko_token_time).seconds < 3500:
-        return iiko_token
-    pass_hash = hashlib.sha1(IIKO_PASSWORD.encode()).hexdigest()
-    url = f"https://{IIKO_SERVER}/resto/api/auth?login={IIKO_LOGIN}&pass={pass_hash}"
+    cached_time = _iiko_token_times.get(rest_key)
+    if _iiko_tokens.get(rest_key) and cached_time and (now - cached_time).seconds < 3500:
+        return _iiko_tokens[rest_key]
+    rest = RESTAURANTS[rest_key]
+    pass_hash = hashlib.sha1(rest["password"].encode()).hexdigest()
+    url = f"https://{rest['server']}/resto/api/auth?login={rest['login']}&pass={pass_hash}"
     resp = requests.get(url, verify=False, timeout=10)
     resp.raise_for_status()
-    iiko_token = resp.text.strip()
-    iiko_token_time = now
-    return iiko_token
+    _iiko_tokens[rest_key] = resp.text.strip()
+    _iiko_token_times[rest_key] = now
+    logger.info(f"iiko token получен для {rest_key}")
+    return _iiko_tokens[rest_key]
 
 
-def iiko_get(path: str, params: dict = None) -> any:
-    token = get_iiko_token()
+def get_rest_key(user_id: int) -> str:
+    return USER_RESTAURANT.get(user_id, "xan")
+
+
+def get_server(user_id: int) -> str:
+    rest_key = get_rest_key(user_id)
+    return RESTAURANTS[rest_key]["server"]
+
+
+def iiko_get(path: str, params: dict = None, user_id: int = None) -> any:
+    rest_key = get_rest_key(user_id) if user_id else "xan"
+    server = RESTAURANTS[rest_key]["server"]
+    token = get_iiko_token(rest_key)
     p = params or {}
     p["key"] = token
-    resp = requests.get(f"https://{IIKO_SERVER}/resto/api/{path}", params=p, verify=False, timeout=30)
+    resp = requests.get(f"https://{server}/resto/api/{path}", params=p, verify=False, timeout=30)
     resp.raise_for_status()
     try:
         return resp.json()
@@ -52,9 +88,11 @@ def iiko_get(path: str, params: dict = None) -> any:
         return resp.text
 
 
-def iiko_olap(body: dict) -> dict:
-    token = get_iiko_token()
-    resp = requests.post(f"https://{IIKO_SERVER}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
+def iiko_olap(body: dict, user_id: int = None) -> dict:
+    rest_key = get_rest_key(user_id) if user_id else "xan"
+    server = RESTAURANTS[rest_key]["server"]
+    token = get_iiko_token(rest_key)
+    resp = requests.post(f"https://{server}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
     resp.raise_for_status()
     return resp.json()
 
@@ -204,7 +242,7 @@ def get_cash_shifts(from_date: str = None, to_date: str = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     try:
-        data = iiko_get("v2/cashshifts/list", {"from": fd, "to": td, "status": "ANY"})
+        data = iiko_get("v2/cashshifts/list", {"from": fd, "to": td, "status": "ANY"}, user_id=_user_id)
         if isinstance(data, list):
             shifts = [{"open_date": s.get("openDate"), "close_date": s.get("closeDate"), "status": s.get("status"), "cash_income": s.get("cashIncome",0), "cash_outcome": s.get("cashOutcome",0), "waiter": s.get("waiter",{}).get("name","—") if isinstance(s.get("waiter"),dict) else "—"} for s in data]
             return {"shifts": shifts, "count": len(shifts), "date": fd}
@@ -215,7 +253,7 @@ def get_cash_shifts(from_date: str = None, to_date: str = None) -> dict:
 
 def get_stop_list() -> dict:
     try:
-        data = iiko_get("stoplist")
+        data = iiko_get("stoplist", user_id=_user_id)
         items = [{"name": i.get("product",{}).get("name","—"), "balance": i.get("balance",0)} for i in (data.get("stopListItems",[]) if isinstance(data,dict) else [])]
         return {"items": items, "count": len(items)}
     except Exception as e:
@@ -224,7 +262,7 @@ def get_stop_list() -> dict:
 
 def get_active_orders() -> dict:
     try:
-        data = iiko_get("orders/list", {"includeDeleted": "false", "includeClosed": "false"})
+        data = iiko_get("orders/list", {"includeDeleted": "false", "includeClosed": "false"}, user_id=_user_id)
         orders = [{"number": o.get("number"), "table": o.get("table",{}).get("name","—") if isinstance(o.get("table"),dict) else "—", "waiter": o.get("waiter",{}).get("name","—") if isinstance(o.get("waiter"),dict) else "—", "sum": o.get("sum",0), "guests": o.get("guestsCount",0)} for o in (data[:20] if isinstance(data,list) else [])]
         return {"orders": orders, "count": len(orders)}
     except Exception as e:
@@ -237,7 +275,7 @@ def get_product_balance(product_name: str = None) -> dict:
         body = {"reportType": "STORAGES", "buildSummary": "false", "groupByRowFields": ["Product.Name", "Store.Name"], "groupByColFields": [], "aggregateFields": ["Amount", "SumPrice"], "filters": {}}
         if product_name:
             body["filters"]["Product.Name"] = {"filterType": "IncludeValues", "values": [product_name]}
-        resp = requests.post(f"https://{IIKO_SERVER}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
+        resp = requests.post(f"https://{RESTAURANTS[get_rest_key(_user_id or 0)]['server'] if _user_id else RESTAURANTS['xan']['server']}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
         data = resp.json()
         items = sorted([{"product": r.get("Product.Name","—"), "store": r.get("Store.Name","—"), "amount": r.get("Amount",0), "sum": r.get("SumPrice",0)} for r in data.get("data",[])], key=lambda x: x["product"])
         return {"items": items[:50], "count": len(items)}
@@ -247,7 +285,7 @@ def get_product_balance(product_name: str = None) -> dict:
 
 def get_employees() -> dict:
     try:
-        data = iiko_get("employees", {"washighlyqualified": "false", "dontlimitrecords": "true"})
+        data = iiko_get("employees", {"washighlyqualified": "false", "dontlimitrecords": "true"}, user_id=_user_id)
         employees = [{"name": e.get("firstName","")+" "+e.get("lastName",""), "role": e.get("mainRole",{}).get("name","—") if isinstance(e.get("mainRole"),dict) else "—"} for e in (data if isinstance(data,list) else [])]
         return {"employees": employees, "count": len(employees)}
     except Exception as e:
@@ -260,7 +298,7 @@ def get_writeoffs(from_date: str = None, to_date: str = None) -> dict:
     try:
         token = get_iiko_token()
         body = {"reportType": "STORAGES", "buildSummary": "true", "groupByRowFields": ["Product.Name", "Store.Name", "Document.Date"], "groupByColFields": [], "aggregateFields": ["Amount", "SumPrice"], "filters": {"Document.Date": {"filterType": "DateRange", "periodType": "CUSTOM", "from": fd, "to": td, "includeLow": "true", "includeHigh": "true"}, "Document.Type": {"filterType": "IncludeValues", "values": ["WRITE_OFF"]}}}
-        resp = requests.post(f"https://{IIKO_SERVER}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
+        resp = requests.post(f"https://{RESTAURANTS[get_rest_key(_user_id or 0)]['server'] if _user_id else RESTAURANTS['xan']['server']}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
         data = resp.json()
         items = [{"product": r.get("Product.Name","—"), "store": r.get("Store.Name","—"), "date": r.get("Document.Date","—"), "amount": r.get("Amount",0), "sum": r.get("SumPrice",0)} for r in data.get("data",[])]
         return {"items": items, "count": len(items), "date": fd}
@@ -274,7 +312,7 @@ def get_incoming_invoices(from_date: str = None, to_date: str = None) -> dict:
     try:
         token = get_iiko_token()
         body = {"reportType": "STORAGES", "buildSummary": "true", "groupByRowFields": ["Product.Name", "Store.Name", "Document.Date", "Supplier.Name"], "groupByColFields": [], "aggregateFields": ["Amount", "SumPrice"], "filters": {"Document.Date": {"filterType": "DateRange", "periodType": "CUSTOM", "from": fd, "to": td, "includeLow": "true", "includeHigh": "true"}, "Document.Type": {"filterType": "IncludeValues", "values": ["INCOMING_INVOICE"]}}}
-        resp = requests.post(f"https://{IIKO_SERVER}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
+        resp = requests.post(f"https://{RESTAURANTS[get_rest_key(_user_id or 0)]['server'] if _user_id else RESTAURANTS['xan']['server']}/resto/api/v2/reports/olap?key={token}", json=body, verify=False, timeout=30)
         data = resp.json()
         items = [{"product": r.get("Product.Name","—"), "supplier": r.get("Supplier.Name","—"), "date": r.get("Document.Date","—"), "amount": r.get("Amount",0), "sum": r.get("SumPrice",0)} for r in data.get("data",[])]
         return {"items": items, "count": len(items), "date": fd}
@@ -286,7 +324,7 @@ def get_tech_card(dish_name: str) -> dict:
     """Технологическая карта блюда — состав и ингредиенты"""
     try:
         # Получаем список всех продуктов/блюд
-        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"}, user_id=_user_id)
         if not isinstance(data, list):
             return {"error": "Не удалось получить список блюд"}
 
@@ -312,7 +350,7 @@ def get_tech_card(dish_name: str) -> dict:
         dish_type = found.get("type")
 
         # Получаем детали блюда с составом
-        detail = iiko_get(f"v2/entities/products/{product_id}")
+        detail = iiko_get(f"v2/entities/products/{product_id}", user_id=_user_id)
         if not isinstance(detail, dict):
             return {"name": name, "type": dish_type, "error": "Детали не найдены"}
 
@@ -348,7 +386,7 @@ def get_tech_card(dish_name: str) -> dict:
 def get_menu(category: str = None) -> dict:
     """Список всех блюд меню с ценами"""
     try:
-        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"}, user_id=_user_id)
         if not isinstance(data, list):
             return {"error": "Не удалось получить меню"}
 
@@ -377,7 +415,7 @@ def get_menu(category: str = None) -> dict:
 def get_dish_cost(dish_name: str) -> dict:
     """Себестоимость блюда"""
     try:
-        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"}, user_id=_user_id)
         if not isinstance(data, list):
             return {"error": "Не удалось получить список"}
 
@@ -387,7 +425,7 @@ def get_dish_cost(dish_name: str) -> dict:
             return {"error": f"Блюдо '{dish_name}' не найдено"}
 
         product_id = found.get("id")
-        detail = iiko_get(f"v2/entities/products/{product_id}")
+        detail = iiko_get(f"v2/entities/products/{product_id}", user_id=_user_id)
 
         cost = detail.get("costPrice", 0) if isinstance(detail, dict) else 0
         price = found.get("price", 0)
@@ -413,7 +451,7 @@ def create_incoming_invoice(supplier_name: str, store_name: str, items: list,
         fd = invoice_date or today()
 
         # Получаем список поставщиков
-        suppliers = iiko_get("suppliers")
+        suppliers = iiko_get("suppliers", user_id=_user_id)
         supplier = None
         if isinstance(suppliers, list):
             for s in suppliers:
@@ -424,7 +462,7 @@ def create_incoming_invoice(supplier_name: str, store_name: str, items: list,
             return {"error": f"Поставщик '{supplier_name}' не найден. Проверьте название."}
 
         # Получаем список складов
-        stores = iiko_get("v2/entities/stores/list", {"includeDeleted": "false"})
+        stores = iiko_get("v2/entities/stores/list", {"includeDeleted": "false"}, user_id=_user_id)
         store = None
         if isinstance(stores, list):
             for s in stores:
@@ -435,7 +473,7 @@ def create_incoming_invoice(supplier_name: str, store_name: str, items: list,
             return {"error": f"Склад '{store_name}' не найден. Проверьте название."}
 
         # Получаем список продуктов для сопоставления
-        products = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        products = iiko_get("v2/entities/products/list", {"includeDeleted": "false"}, user_id=_user_id)
         product_map = {}
         if isinstance(products, list):
             for p in products:
@@ -593,7 +631,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
     try:
-        answer = await process_message(text)
+        answer = await process_message(text, user_id=user_id)
         await update.message.reply_text(answer, parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Ошибка: {e}")
@@ -704,7 +742,7 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ Не удалось распознать речь. Попробуйте ещё раз.")
             return
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
-        answer = await process_message(recognized)
+        answer = await process_message(recognized, user_id=user_id)
         await update.message.reply_text(f"🎤 _{recognized}_\n\n{answer}", parse_mode="Markdown")
     except Exception as e:
         logger.error(f"Голос ошибка: {e}")
