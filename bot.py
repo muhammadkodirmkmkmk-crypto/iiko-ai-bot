@@ -717,14 +717,14 @@ async def handle_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     welcome = f"""👋 Салом, *{user_name}*!
 
-🤖 Мен *Xan Kokand* ресторанининг AI-ассистентиман.
+🤖 Мен сизнинг *AI-ассистентингизман* — ресторан маълумотларини олиш учун ёрдам бераман.
 
 📊 *Мен нима қила оламан:*
 
 💰 *Молия:*
 • Бугунги / давр бўйича тушум
 • Тўлов турлари (нақд, Click, Payme)
-• Chegirmalar va bonuslar
+• Chegirmalar
 
 👨‍💼 *Официантлар:*
 • Ҳар бир официантнинг тушуми
