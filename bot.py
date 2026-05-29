@@ -603,13 +603,14 @@ def get_system_prompt(user_id: int = None) -> str:
 SYSTEM_PROMPT = get_system_prompt()
 
 
-async def process_message(text: str) -> str:
+async def process_message(text: str, user_id: int = None) -> str:
     messages = [{"role": "user", "content": text}]
+    system = get_system_prompt(user_id)
     for _ in range(10):
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=2000,
-            system=SYSTEM_PROMPT,
+            system=system,
             tools=TOOLS,
             messages=messages
         )
@@ -617,9 +618,11 @@ async def process_message(text: str) -> str:
             tool_results = []
             for block in response.content:
                 if block.type == "tool_use":
-                    logger.info(f"Tool: {block.name} {block.input}")
+                    logger.info(f"Tool: {block.name} {block.input} user={user_id}")
                     try:
-                        result = TOOL_FUNCTIONS[block.name](**block.input)
+                        tool_input = dict(block.input)
+                        tool_input["_user_id"] = user_id
+                        result = TOOL_FUNCTIONS[block.name](**tool_input)
                         tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result, ensure_ascii=False)})
                     except Exception as e:
                         tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": f"Ошибка: {str(e)}", "is_error": True})
@@ -683,7 +686,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         response = anthropic_client.messages.create(
             model="claude-sonnet-4-5",
             max_tokens=3000,
-            system=SYSTEM_PROMPT,
+            system=get_system_prompt(user_id),
             tools=TOOLS,
             messages=[{
                 "role": "user",
@@ -711,7 +714,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if block.type == "tool_use":
                     logger.info(f"Photo tool: {block.name} {block.input}")
                     try:
-                        result = TOOL_FUNCTIONS[block.name](**block.input)
+                        tool_input = dict(block.input)
+                        tool_input["_user_id"] = user_id
+                        result = TOOL_FUNCTIONS[block.name](**tool_input)
                         tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": json.dumps(result, ensure_ascii=False)})
                     except Exception as e:
                         tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": f"Ошибка: {str(e)}", "is_error": True})
@@ -719,7 +724,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             response = anthropic_client.messages.create(
                 model="claude-sonnet-4-5",
                 max_tokens=2000,
-                system=SYSTEM_PROMPT,
+                system=get_system_prompt(user_id),
                 tools=TOOLS,
                 messages=messages
             )
