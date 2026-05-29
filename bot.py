@@ -282,6 +282,129 @@ def get_incoming_invoices(from_date: str = None, to_date: str = None) -> dict:
         return {"error": str(e)}
 
 
+def get_tech_card(dish_name: str) -> dict:
+    """Технологическая карта блюда — состав и ингредиенты"""
+    try:
+        # Получаем список всех продуктов/блюд
+        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        if not isinstance(data, list):
+            return {"error": "Не удалось получить список блюд"}
+
+        # Ищем блюдо по названию
+        found = None
+        dish_lower = dish_name.lower()
+        for item in data:
+            name = item.get("name", "")
+            if dish_lower in name.lower():
+                found = item
+                break
+
+        if not found:
+            # Попробуем частичное совпадение
+            matches = [i for i in data if dish_lower in i.get("name","").lower()]
+            if matches:
+                found = matches[0]
+            else:
+                return {"error": f"Блюдо '{dish_name}' не найдено в системе", "hint": "Используй get_menu для просмотра списка блюд"}
+
+        product_id = found.get("id")
+        name = found.get("name")
+        dish_type = found.get("type")
+
+        # Получаем детали блюда с составом
+        detail = iiko_get(f"v2/entities/products/{product_id}")
+        if not isinstance(detail, dict):
+            return {"name": name, "type": dish_type, "error": "Детали не найдены"}
+
+        # Извлекаем ингредиенты
+        ingredients = []
+        for ing in detail.get("ingredients", []):
+            product = ing.get("product", {})
+            ingredients.append({
+                "name": product.get("name", "—"),
+                "amount": ing.get("amount", 0),
+                "unit": ing.get("unit", {}).get("name", "—") if isinstance(ing.get("unit"), dict) else "—",
+                "brutto": ing.get("amountOfGrossWeight", ing.get("amount", 0)),
+                "netto": ing.get("amount", 0)
+            })
+
+        return {
+            "name": name,
+            "type": dish_type,
+            "price": found.get("price", 0),
+            "weight": found.get("weight", 0),
+            "energy": found.get("energyFullAmount", 0),
+            "proteins": found.get("proteinsFullAmount", 0),
+            "fats": found.get("fatsFullAmount", 0),
+            "carbs": found.get("carbohydratesFullAmount", 0),
+            "ingredients": ingredients,
+            "cooking_time": found.get("cookingPlaceName", "—"),
+            "description": found.get("description", "")
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_menu(category: str = None) -> dict:
+    """Список всех блюд меню с ценами"""
+    try:
+        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        if not isinstance(data, list):
+            return {"error": "Не удалось получить меню"}
+
+        dishes = []
+        for item in data:
+            if item.get("type") not in ["DISH", "GOOD", "MODIFIER"]:
+                continue
+            cat = item.get("productCategory", {})
+            cat_name = cat.get("name", "—") if isinstance(cat, dict) else "—"
+            if category and category.lower() not in cat_name.lower():
+                continue
+            dishes.append({
+                "name": item.get("name", "—"),
+                "category": cat_name,
+                "price": item.get("price", 0),
+                "weight": item.get("weight", 0),
+                "type": item.get("type", "—")
+            })
+
+        dishes.sort(key=lambda x: (x["category"], x["name"]))
+        return {"dishes": dishes, "count": len(dishes), "category_filter": category}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_dish_cost(dish_name: str) -> dict:
+    """Себестоимость блюда"""
+    try:
+        data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"})
+        if not isinstance(data, list):
+            return {"error": "Не удалось получить список"}
+
+        dish_lower = dish_name.lower()
+        found = next((i for i in data if dish_lower in i.get("name","").lower()), None)
+        if not found:
+            return {"error": f"Блюдо '{dish_name}' не найдено"}
+
+        product_id = found.get("id")
+        detail = iiko_get(f"v2/entities/products/{product_id}")
+
+        cost = detail.get("costPrice", 0) if isinstance(detail, dict) else 0
+        price = found.get("price", 0)
+        margin = price - cost if price and cost else 0
+        margin_pct = round((margin / price * 100), 1) if price else 0
+
+        return {
+            "name": found.get("name"),
+            "price": price,
+            "cost": cost,
+            "margin": margin,
+            "margin_percent": margin_pct
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 # ===================== TOOLS =====================
 
 TOOLS = [
@@ -299,7 +422,10 @@ TOOLS = [
     {"name": "get_product_balance", "description": "Остатки товаров на складе.", "input_schema": {"type": "object", "properties": {"product_name": {"type": "string"}}, "required": []}},
     {"name": "get_employees", "description": "Список сотрудников ресторана.", "input_schema": {"type": "object", "properties": {}, "required": []}},
     {"name": "get_writeoffs", "description": "Списания продуктов со склада.", "input_schema": {"type": "object", "properties": {"from_date": {"type": "string"}, "to_date": {"type": "string"}}, "required": []}},
-    {"name": "get_incoming_invoices", "description": "Приходные накладные — поступление товаров от поставщиков.", "input_schema": {"type": "object", "properties": {"from_date": {"type": "string"}, "to_date": {"type": "string"}}, "required": []}}
+    {"name": "get_incoming_invoices", "description": "Приходные накладные — поступление товаров от поставщиков.", "input_schema": {"type": "object", "properties": {"from_date": {"type": "string"}, "to_date": {"type": "string"}}, "required": []}},
+    {"name": "get_tech_card", "description": "Технологическая карта блюда — состав, ингредиенты, вес брутто/нетто, БЖУ, калории.", "input_schema": {"type": "object", "properties": {"dish_name": {"type": "string", "description": "Название блюда"}}, "required": ["dish_name"]}},
+    {"name": "get_menu", "description": "Список всех блюд меню с ценами и категориями.", "input_schema": {"type": "object", "properties": {"category": {"type": "string", "description": "Фильтр по категории (необязательно)"}}, "required": []}},
+    {"name": "get_dish_cost", "description": "Себестоимость блюда, цена продажи и маржинальность.", "input_schema": {"type": "object", "properties": {"dish_name": {"type": "string", "description": "Название блюда"}}, "required": ["dish_name"]}}
 ]
 
 TOOL_FUNCTIONS = {t["name"]: globals()[t["name"]] for t in TOOLS}
