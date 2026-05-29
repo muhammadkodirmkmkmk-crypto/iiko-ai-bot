@@ -355,7 +355,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("🎤 Голосовые сообщения пока не поддерживаются. Напишите текстом.")
+    user_id = update.effective_user.id
+    if user_id not in ALLOWED_USERS:
+        await update.message.reply_text("⛔ У вас нет доступа к этому боту.")
+        return
+
+    await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+
+    try:
+        voice = update.message.voice
+        tg_file = await context.bot.get_file(voice.file_id)
+        resp = requests.get(tg_file.file_path, timeout=30)
+        resp.raise_for_status()
+
+        import base64
+        audio_b64 = base64.b64encode(resp.content).decode()
+
+        transcribe_response = anthropic_client.messages.create(
+            model="claude-sonnet-4-5",
+            max_tokens=500,
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Транскрибируй это голосовое сообщение. Верни только текст без пояснений."},
+                    {"type": "document", "source": {"type": "base64", "media_type": "audio/ogg", "data": audio_b64}}
+                ]
+            }]
+        )
+        recognized_text = transcribe_response.content[0].text.strip()
+        logger.info(f"Голосовое распознано: {recognized_text}")
+
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action="typing")
+        answer = await process_message(recognized_text)
+        await update.message.reply_text(f"🎤 _{recognized_text}_\n\n{answer}", parse_mode="Markdown")
+
+    except Exception as e:
+        logger.error(f"Ошибка голосового: {e}")
+        await update.message.reply_text("❌ Не удалось распознать голос. Напишите текстом.")
 
 
 def main():
