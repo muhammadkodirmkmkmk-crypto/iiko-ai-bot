@@ -145,7 +145,7 @@ def get_revenue(from_date: str = None, to_date: str = None) -> dict:
         "groupByRowFields": ["OpenDate.Typed"], "groupByColFields": [],
         "aggregateFields": ["DishSumInt", "DishDiscountSumInt", "GuestNum"],
         "filters": date_filter(fd, td)
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     rows = [{"date": r.get("OpenDate.Typed"), "revenue": r.get("DishDiscountSumInt", 0), "gross": r.get("DishSumInt", 0), "guests": r.get("GuestNum", 0), "discount": r.get("DishSumInt", 0) - r.get("DishDiscountSumInt", 0)} for r in data.get("data", [])]
     return {"rows": rows, "from": fd, "to": td}
 
@@ -158,7 +158,7 @@ def get_waiters(from_date: str = None, to_date: str = None) -> dict:
         "groupByRowFields": ["WaiterName"], "groupByColFields": [],
         "aggregateFields": ["DishSumInt", "DishDiscountSumInt", "GuestNum"],
         "filters": date_filter(fd, td)
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     waiters = sorted([{"name": r.get("WaiterName","—"), "revenue": r.get("DishDiscountSumInt",0), "gross": r.get("DishSumInt",0), "guests": r.get("GuestNum",0)} for r in data.get("data",[])], key=lambda x: x["revenue"], reverse=True)
     return {"waiters": waiters, "date": fd}
 
@@ -171,7 +171,7 @@ def get_payment_types(from_date: str = None, to_date: str = None) -> dict:
         "groupByRowFields": ["PayTypes"], "groupByColFields": [],
         "aggregateFields": ["DishDiscountSumInt"],
         "filters": date_filter(fd, td)
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     payments = sorted([{"type": r.get("PayTypes","—"), "amount": r.get("DishDiscountSumInt",0)} for r in data.get("data",[])], key=lambda x: x["amount"], reverse=True)
     return {"payments": payments, "date": fd}
 
@@ -184,7 +184,7 @@ def get_deleted_dishes(from_date: str = None, to_date: str = None) -> dict:
         "groupByRowFields": ["DishName", "DeletedWithWriteoff", "WaiterName"], "groupByColFields": [],
         "aggregateFields": ["DishAmountInt", "DishSumInt"],
         "filters": {**date_filter(fd, td), "DeletedWithWriteoff": {"filterType": "IncludeValues", "values": ["DELETED_WITH_WRITEOFF", "DELETED_WITHOUT_WRITEOFF"]}}
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     dishes = [{"name": r.get("DishName","—"), "amount": r.get("DishAmountInt",0), "sum": r.get("DishSumInt",0), "waiter": r.get("WaiterName","—"), "writeoff": r.get("DeletedWithWriteoff") == "DELETED_WITH_WRITEOFF"} for r in data.get("data",[])]
     return {"dishes": dishes, "total": len(dishes), "date": fd}
 
@@ -197,7 +197,7 @@ def get_top_dishes(from_date: str = None, to_date: str = None, limit: int = 10) 
         "groupByRowFields": ["DishName", "DishCategory"], "groupByColFields": [],
         "aggregateFields": ["DishAmountInt", "DishDiscountSumInt"],
         "filters": {**date_filter(fd, td), "DeletedWithWriteoff": {"filterType": "IncludeValues", "values": ["NOT_DELETED"]}}
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     dishes = sorted([{"name": r.get("DishName","—"), "category": r.get("DishCategory","—"), "amount": r.get("DishAmountInt",0), "sum": r.get("DishDiscountSumInt",0)} for r in data.get("data",[])], key=lambda x: x["amount"], reverse=True)
     return {"dishes": dishes[:limit], "date": fd}
 
@@ -209,7 +209,7 @@ def get_hourly_revenue(from_date: str = None) -> dict:
         "groupByRowFields": ["CloseHour"], "groupByColFields": [],
         "aggregateFields": ["DishDiscountSumInt", "GuestNum"],
         "filters": {**date_filter(fd, fd), "DeletedWithWriteoff": {"filterType": "IncludeValues", "values": ["NOT_DELETED"]}}
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     hours = sorted([{"hour": r.get("CloseHour","—"), "revenue": r.get("DishDiscountSumInt",0), "guests": r.get("GuestNum",0)} for r in data.get("data",[])], key=lambda x: str(x["hour"]))
     return {"hours": hours, "date": fd}
 
@@ -222,7 +222,7 @@ def get_category_revenue(from_date: str = None, to_date: str = None) -> dict:
         "groupByRowFields": ["DishCategory"], "groupByColFields": [],
         "aggregateFields": ["DishAmountInt", "DishDiscountSumInt"],
         "filters": {**date_filter(fd, td), "DeletedWithWriteoff": {"filterType": "IncludeValues", "values": ["NOT_DELETED"]}}
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     cats = sorted([{"category": r.get("DishCategory","—"), "amount": r.get("DishAmountInt",0), "sum": r.get("DishDiscountSumInt",0)} for r in data.get("data",[])], key=lambda x: x["sum"], reverse=True)
     return {"categories": cats, "date": fd}
 
@@ -235,7 +235,7 @@ def get_discounts(from_date: str = None, to_date: str = None) -> dict:
         "groupByRowFields": ["DiscountType", "WaiterName"], "groupByColFields": [],
         "aggregateFields": ["DiscountSum"],
         "filters": date_filter(fd, td)
-    }, user_id=_user_id, user_id=_user_id)
+    }, user_id=_user_id)
     discounts = [{"type": r.get("DiscountType","—"), "waiter": r.get("WaiterName","—"), "sum": r.get("DiscountSum",0)} for r in data.get("data",[]) if r.get("DiscountSum",0) != 0]
     return {"discounts": discounts, "date": fd}
 
