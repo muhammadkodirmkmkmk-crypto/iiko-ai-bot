@@ -137,7 +137,7 @@ def transcribe_voice(audio_bytes: bytes) -> str:
 
 # ===================== ИНСТРУМЕНТЫ =====================
 
-def get_revenue(from_date: str = None, to_date: str = None) -> dict:
+def get_revenue(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     data = iiko_olap({
@@ -150,7 +150,7 @@ def get_revenue(from_date: str = None, to_date: str = None) -> dict:
     return {"rows": rows, "from": fd, "to": td}
 
 
-def get_waiters(from_date: str = None, to_date: str = None) -> dict:
+def get_waiters(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     data = iiko_olap({
@@ -163,7 +163,7 @@ def get_waiters(from_date: str = None, to_date: str = None) -> dict:
     return {"waiters": waiters, "date": fd}
 
 
-def get_payment_types(from_date: str = None, to_date: str = None) -> dict:
+def get_payment_types(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     data = iiko_olap({
@@ -176,7 +176,7 @@ def get_payment_types(from_date: str = None, to_date: str = None) -> dict:
     return {"payments": payments, "date": fd}
 
 
-def get_deleted_dishes(from_date: str = None, to_date: str = None) -> dict:
+def get_deleted_dishes(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     data = iiko_olap({
@@ -189,7 +189,7 @@ def get_deleted_dishes(from_date: str = None, to_date: str = None) -> dict:
     return {"dishes": dishes, "total": len(dishes), "date": fd}
 
 
-def get_top_dishes(from_date: str = None, to_date: str = None, limit: int = 10) -> dict:
+def get_top_dishes(from_date: str = None, to_date: str = None, limit: int = 10, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     data = iiko_olap({
@@ -202,7 +202,7 @@ def get_top_dishes(from_date: str = None, to_date: str = None, limit: int = 10) 
     return {"dishes": dishes[:limit], "date": fd}
 
 
-def get_hourly_revenue(from_date: str = None) -> dict:
+def get_hourly_revenue(from_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     data = iiko_olap({
         "reportType": "SALES", "buildSummary": "false",
@@ -214,7 +214,7 @@ def get_hourly_revenue(from_date: str = None) -> dict:
     return {"hours": hours, "date": fd}
 
 
-def get_category_revenue(from_date: str = None, to_date: str = None) -> dict:
+def get_category_revenue(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     data = iiko_olap({
@@ -227,7 +227,7 @@ def get_category_revenue(from_date: str = None, to_date: str = None) -> dict:
     return {"categories": cats, "date": fd}
 
 
-def get_discounts(from_date: str = None, to_date: str = None) -> dict:
+def get_discounts(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     data = iiko_olap({
@@ -240,7 +240,7 @@ def get_discounts(from_date: str = None, to_date: str = None) -> dict:
     return {"discounts": discounts, "date": fd}
 
 
-def get_cash_shifts(from_date: str = None, to_date: str = None) -> dict:
+def get_cash_shifts(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     try:
@@ -271,7 +271,7 @@ def get_active_orders() -> dict:
         return {"error": str(e)}
 
 
-def get_product_balance(product_name: str = None) -> dict:
+def get_product_balance(product_name: str = None, _user_id: int = None) -> dict:
     try:
         token = get_iiko_token()
         body = {"reportType": "STORAGES", "buildSummary": "false", "groupByRowFields": ["Product.Name", "Store.Name"], "groupByColFields": [], "aggregateFields": ["Amount", "SumPrice"], "filters": {}}
@@ -294,7 +294,7 @@ def get_employees() -> dict:
         return {"error": str(e)}
 
 
-def get_writeoffs(from_date: str = None, to_date: str = None) -> dict:
+def get_writeoffs(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     try:
@@ -308,7 +308,7 @@ def get_writeoffs(from_date: str = None, to_date: str = None) -> dict:
         return {"error": str(e)}
 
 
-def get_incoming_invoices(from_date: str = None, to_date: str = None) -> dict:
+def get_incoming_invoices(from_date: str = None, to_date: str = None, _user_id: int = None) -> dict:
     fd = from_date or today()
     td = to_date or today()
     try:
@@ -322,7 +322,7 @@ def get_incoming_invoices(from_date: str = None, to_date: str = None) -> dict:
         return {"error": str(e)}
 
 
-def get_tech_card(dish_name: str) -> dict:
+def get_tech_card(dish_name: str, _user_id: int = None) -> dict:
     """Технологическая карта блюда — состав и ингредиенты"""
     try:
         # Получаем список всех продуктов/блюд
@@ -385,7 +385,7 @@ def get_tech_card(dish_name: str) -> dict:
         return {"error": str(e)}
 
 
-def get_menu(category: str = None) -> dict:
+def get_menu(category: str = None, _user_id: int = None) -> dict:
     """Список всех блюд меню с ценами"""
     try:
         data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"}, user_id=_user_id)
@@ -414,7 +414,7 @@ def get_menu(category: str = None) -> dict:
         return {"error": str(e)}
 
 
-def get_dish_cost(dish_name: str) -> dict:
+def get_dish_cost(dish_name: str, _user_id: int = None) -> dict:
     """Себестоимость блюда"""
     try:
         data = iiko_get("v2/entities/products/list", {"includeDeleted": "false"}, user_id=_user_id)
@@ -446,7 +446,7 @@ def get_dish_cost(dish_name: str) -> dict:
 
 
 
-def create_incoming_invoice(supplier_name: str, store_name: str, items: list,
+def create_incoming_invoice(supplier_name: str, store_name: str, items: list, _user_id: int = None,
                              invoice_date: str = None, invoice_number: str = None) -> dict:
     """Создать приходную накладную в iiko"""
     try:
